@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import re
+import sys
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional
@@ -12,6 +13,14 @@ from playwright._impl._api_types import Error as PlaywrightError
 from playwright.sync_api import Frame, sync_playwright
 
 Cookie = Dict[str, Any]
+
+
+class ChallengeNotDetected(Exception):
+    pass
+
+
+class SolverError(RuntimeError):
+    pass
 
 
 class ChallengePlatform(Enum):
@@ -195,7 +204,7 @@ class CloudflareSolver:
                 challenge_stage.wait_for(state="hidden")
 
 
-def main() -> None:
+def main(argv) -> None:
     parser = argparse.ArgumentParser(
         description="A simple program for scraping Cloudflare clearance (cf_clearance) cookies from websites issuing Cloudflare challenges to visitors"
     )
@@ -265,7 +274,7 @@ def main() -> None:
         help="Increase the output verbosity",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     logging_level = logging.INFO if args.verbose else logging.ERROR
 
     logging.basicConfig(
@@ -295,14 +304,12 @@ def main() -> None:
         try:
             solver.page.goto(args.url)
         except PlaywrightError as err:
-            logging.error(err)
-            return
+            raise SolverError(err)
 
         challenge_platform = solver.detect_challenge()
 
         if challenge_platform is None:
-            logging.error("No Cloudflare challenge detected.")
-            return
+            raise ChallengeNotDetected("No Cloudflare challenge detected.")
 
         logging.info(challenge_messages[challenge_platform])
 
@@ -314,8 +321,7 @@ def main() -> None:
         clearance_cookie = solver.extract_clearance_cookie(solver.cookies)
 
     if clearance_cookie is None:
-        logging.error("Failed to retrieve the Cloudflare clearance cookie.")
-        return
+        raise SolverError("Failed to retrieve the Cloudflare clearance cookie.")
 
     if not args.verbose:
         print(clearance_cookie["value"])
@@ -354,4 +360,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
